@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define MAX_DICT_SIZE 1024
+
 int* lzw_encode(int * base, unsigned n, int *input, unsigned n_input, unsigned *n_output);
 
 int main() {
@@ -17,145 +19,60 @@ int main() {
     return 0;
 }
 
-typedef struct TableNode{
-    unsigned n;
-    unsigned elem_n;
-    int *elem;
-    struct TableNode *next;
-} TableNode;
-
-TableNode * table_Add(TableNode * root, int * elem, unsigned elem_n) {
-    TableNode * new = malloc(sizeof(TableNode));
-    new->elem = elem;
-    new->elem_n = elem_n;
-    new->n = 0;
-    new->next = NULL;
-
-    if (root) {
-        for (;root->next;root = root->next) {
-        }
-        new->n = root->n + 1;
-
-        root->next = new;
-    }
-
-    return new;
-}
-
-int * table_Get(TableNode * root, int n, unsigned *elem_n) {
-    for(;root;root = root->next) {
-        if (root->n == n) {
-            *elem_n = root->elem_n;
-            return root->elem;
-        }
-    }
-
-    return NULL;
-}
-
-void table_Delete(TableNode * root) {
-}
-
-typedef struct CodeNode{
-    unsigned n;
+typedef struct {
+    int prefix;
     int elem;
-    struct CodeNode *next;
-} CodeNode;
+} dictEntry;
 
-CodeNode * code_Add(CodeNode * root, int elem) {
-    CodeNode * new = malloc(sizeof(CodeNode));
-    new->elem = elem;
-    new->n = 0;
-    new->next = NULL;
+typedef struct {
+    unsigned size;
+    dictEntry entry[MAX_DICT_SIZE];
+} Dictionary;
 
-    if (root) {
-        for (;root->next;root = root->next) {
-        }
-        new->n = root->n + 1;
-
-        root->next = new;
-    } 
-
-    return new;
+void dictionary_add(Dictionary * dict, int prefix, int elem) {
+    if (dict->size < MAX_DICT_SIZE) {
+        dict->entry[dict->size].prefix = prefix;
+        dict->entry[dict->size].elem = elem;
+        dict->size++;
+    }
 }
 
-int* code_Print(CodeNode* root, unsigned *n) {
-    CodeNode * node = root;
-    for (;node->next;node = node->next) {
+int dictionary_find(Dictionary * dict, int prefix, int elem) {
+    for (unsigned i = 0; i < dict->size; i++) {
+        if (dict->entry[i].prefix == prefix) {
+            if(dict->entry[i].elem == elem) {
+                return i;
+            }
+        }
     }
-    *n = node->n + 1;
-
-    int * out = malloc(*n * sizeof(int));
-    for(int i = 0; root; root = root->next) {
-        out[i++] = root->elem; 
-    }
-
-    return out;
+    return -1;
 }
 
 int* lzw_encode(int * base, unsigned n, int *input, unsigned n_input, unsigned *n_output) {
-    TableNode* table = table_Add(NULL, base, 1);
-    for(unsigned i = 1; i < n; i++) {
-        table_Add(table, base + i, 1);
+    Dictionary dict;
+    dict.size = 0;
+
+    for(unsigned i = 0; i < n; i++) {
+        dictionary_add(&dict, -1, base[i]);
     }
 
-    CodeNode * code = code_Add(NULL, 0);
+    int prefix = dictionary_find(&dict, -1, input[0]);
 
-    CodeNode * pair = code_Add(NULL, input[0]);
-    for (unsigned i = 1; i < n_input; i++) {
+    for(unsigned i = 1; i< n_input; i++) {
         int ch = input[i];
-        code_Add(pair, ch);
 
-        char equal;
-        unsigned t = 0;
-        for(TableNode* node = table; node; node = node->next) {
-            unsigned n = node->elem_n;
-            int * elem = node->elem;
+        int find = dictionary_find(&dict, prefix, ch);
 
-            equal = 1;
-            unsigned i = 0;
-            CodeNode * this = pair;
-            for(; this; this = this->next) {
-                if (i == n) {
-                    t = node->n;
-                    equal = 0;
-                    break;
-                }
-
-                if (elem[i] != this->elem) {
-                    equal = 0;
-                    break;
-                } 
-                i++;
-            }
-
-            this = pair;
-            for(; this; this = this->next) {
-            }
-
-            if(this) {
-                equal = 0;
-            }
-
-            if(equal) {
-                break;
-            }
-        }
-
-        if (equal) {
+        if (find != -1) {
+            prefix = find;
             continue;
         } else {
-            code_Add(code, t);
-
-            int * new = code_Print(pair, &n);
-            table_Add(table, new, n);
-
-            for(; pair->next; pair = pair->next) {
-            }
-            pair->n = 0;
+            dictionary_add(&dict, prefix, ch);
+            printf("%d\n", prefix);
+            prefix = dictionary_find(&dict, -1, ch);
         }
-        
-    }      
+    }
 
-    return code_Print(code, n_output);
+    *n_output = 0;
+    return NULL;
 }

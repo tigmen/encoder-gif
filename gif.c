@@ -3,8 +3,9 @@
 #include <string.h>
 
 #define MAX_DICT_SIZE 1024
+#define LZW_OUTPUT_SIZE 128
 
-int* lzw_encode(int * base, unsigned n, int *input, unsigned n_input, unsigned *n_output);
+int* lzw_encode(const int * base, unsigned n, const int *input, unsigned n_input, unsigned *n_output);
 
 int main() {
     int base[] = {0, 1, 2, 3, 4, 5};
@@ -16,6 +17,9 @@ int main() {
     for(unsigned i = 0; i < n; i++) {
         printf("%d\n", output[i]);
     }
+
+    free(output);
+
     return 0;
 }
 
@@ -48,7 +52,14 @@ int dictionary_find(Dictionary * dict, int prefix, int elem) {
     return -1;
 }
 
-int* lzw_encode(int * base, unsigned n, int *input, unsigned n_input, unsigned *n_output) {
+int* lzw_encode(const int * base, unsigned n, const int *input, unsigned n_input, unsigned *n_output) {
+    unsigned cap_output = LZW_OUTPUT_SIZE;
+    *n_output = 0;
+    int* output = malloc(sizeof(int) * cap_output);
+    if (!output) {
+        return NULL;
+    }
+
     Dictionary dict;
     dict.size = 0;
 
@@ -67,12 +78,36 @@ int* lzw_encode(int * base, unsigned n, int *input, unsigned n_input, unsigned *
             prefix = find;
             continue;
         } else {
+            if (*n_output >= cap_output) {
+                cap_output *= 2;
+                int* tmp = realloc(output, sizeof(int) * cap_output);
+                if (!tmp) {
+                    free(output);
+                    return NULL;
+                }
+                output = tmp;
+            }
+            output[*n_output] = prefix;
+            (*n_output)++;
+
             dictionary_add(&dict, prefix, ch);
-            printf("%d\n", prefix);
             prefix = dictionary_find(&dict, -1, ch);
         }
     }
 
-    *n_output = 0;
-    return NULL;
+    if (prefix != -1) {
+        if (*n_output >= cap_output) {
+            cap_output *= 2;
+            int* tmp = realloc(output, sizeof(int) * cap_output);
+            if (!tmp) {
+                free(output);
+                return NULL;
+            }
+            output = tmp;
+        }
+        output[*n_output] = prefix;
+        (*n_output)++;
+    }
+
+    return output;
 }

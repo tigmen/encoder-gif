@@ -5,21 +5,81 @@
 #define MAX_DICT_SIZE 1024
 #define LZW_OUTPUT_SIZE 128
 
+typedef struct {
+    char * version;
+} GIFHeader;
+
+typedef struct {
+    unsigned width;
+    unsigned height;
+
+    // packed field
+    char global_color_table_flag; // 1 bit
+    char color_resulution; // 3 bit
+    char sort_flag; // 1 bit
+    char global_color_table_size; // 3 bit
+} GIFLogicalScreenDescriptor;
+
+typedef struct {
+    int* color;
+} GIFColorTable;
+
+typedef struct {
+    char extension_introducer; // always 0x21
+    char graphic_conrtol_label; // always 0xf9
+    char byte_size;
+
+    //packed field
+    char reserved_for_future; // 3 bit
+    char disposal_method; // 3 bit
+    char user_input_flag; // 1 bit
+    char transparent_color_flag; // 1 bit
+
+    char transparent_color_index;
+    char block_terminator; // always 0x00
+} GIFGraphicsConrtolExtension;
+
+typedef struct {
+    char image_seperator; // always 0x2c
+    short image_left;
+    short image_top;
+    short image_width;
+    short image_height;
+
+    //packed field
+    char local_color_table_flag; // 1 bit
+    char interlace_flag; // 1 bit
+    char sort_flag; // 1 bit
+    char reserved_for_future; // 2 bit
+    char local_color_table_size; // 3 bit
+} GIFImageDescriptor;
+
+typedef struct {
+    char extension_introducer; //always 0x21
+    char comment_extension_label; //always 0xfe
+    void * subblocks;
+    char block_terminator; //always 0x00
+} GIFImageData;
+
+typedef struct {
+    GIFHeader * header;
+    GIFLogicalScreenDescriptor * screen_descriptor;
+    GIFColorTable * global_color_table;
+    GIFGraphicsConrtolExtension * graphics_control_extension;
+    GIFImageDescriptor * image_desriptor;
+    GIFColorTable * local_color_table;
+    GIFImageData * image_data;
+} GIFConfig;
+
 int* lzw_encode(const int * base, unsigned n, const int *input, unsigned n_input, unsigned *n_output);
 
 int main() {
-    int base[] = {0, 1, 2, 3, 4, 5};
-    int data[] = {1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1};
+    GIFConfig config;
 
-    unsigned n;
-    int * output = lzw_encode(base, 6, data, 15, &n);
+    return 0;
+}
 
-    for(unsigned i = 0; i < n; i++) {
-        printf("%d\n", output[i]);
-    }
-
-    free(output);
-
+int gif_encode(GIFConfig * config) {
     return 0;
 }
 

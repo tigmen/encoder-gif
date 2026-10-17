@@ -1,64 +1,59 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <io.h>
+#include <inttypes.h>
 
 #define MAX_DICT_SIZE 1024
-#define LZW_OUTPUT_SIZE 128
 
 typedef struct {
     char * version;
 } GIFHeader;
 
 typedef struct {
-    unsigned width;
-    unsigned height;
+    size_t _size;
+    uint16_t width;
+    uint16_t height;
 
     // packed field
-    char global_color_table_flag; // 1 bit
-    char color_resulution; // 3 bit
-    char sort_flag; // 1 bit
-    char global_color_table_size; // 3 bit
+    uint8_t packed;
 } GIFLogicalScreenDescriptor;
 
 typedef struct {
-    int* color;
+    size_t _size;
+    uint32_t* color;
 } GIFColorTable;
 
 typedef struct {
-    char extension_introducer; // always 0x21
-    char graphic_conrtol_label; // always 0xf9
-    char byte_size;
+    size_t _size;
+    uint8_t extension_introducer; // always 0x21
+    uint8_t graphic_conrtol_label; // always 0xf9
+    uint8_t byte_size;
 
-    //packed field
-    char reserved_for_future; // 3 bit
-    char disposal_method; // 3 bit
-    char user_input_flag; // 1 bit
-    char transparent_color_flag; // 1 bit
+    uint8_t packed;
 
-    char transparent_color_index;
-    char block_terminator; // always 0x00
+    uint16_t delay_time;
+    uint8_t transparent_color_index;
+    uint8_t block_terminator; // always 0x00
 } GIFGraphicsConrtolExtension;
 
 typedef struct {
-    char image_seperator; // always 0x2c
-    short image_left;
-    short image_top;
-    short image_width;
-    short image_height;
+    size_t _size;
+    uint8_t image_seperator; // always 0x2c
+    uint16_t image_left;
+    uint16_t image_top;
+    uint16_t image_width;
+    uint16_t image_height;
 
     //packed field
-    char local_color_table_flag; // 1 bit
-    char interlace_flag; // 1 bit
-    char sort_flag; // 1 bit
-    char reserved_for_future; // 2 bit
-    char local_color_table_size; // 3 bit
+    uint8_t packed;
 } GIFImageDescriptor;
 
 typedef struct {
-    char extension_introducer; //always 0x21
-    char comment_extension_label; //always 0xfe
+    uint8_t extension_introducer; //always 0x21
+    uint8_t comment_extension_label; //always 0xfe
     void * subblocks;
-    char block_terminator; //always 0x00
+    uint8_t block_terminator; //always 0x00
 } GIFImageData;
 
 typedef struct {
@@ -71,17 +66,154 @@ typedef struct {
     GIFImageData * image_data;
 } GIFConfig;
 
-int* lzw_encode(const int * base, unsigned n, const int *input, unsigned n_input, unsigned *n_output);
+typedef struct {
+    int code;
+    unsigned width;
+} LZWCode;
+
+static LZWCode* lzw_encode(const int * base, unsigned n, const int *input, unsigned n_input, unsigned *n_output);
+int gif_encode(GIFConfig * config, int fd);
 
 int main() {
-    GIFConfig config;
+
+
+    GIFConfig config = (GIFConfig){
+        
+    };
 
     return 0;
 }
 
-int gif_encode(GIFConfig * config) {
+int gif_encode(GIFConfig * config, int fd) {
+
+    char bitmap[4][4] = {
+        {0, 1, 0, 0},
+        {1, 0, 1, 0},
+        {0, 1, 0, 0},
+        {1, 0, 1, 0},
+    };
+
+    // HEADER
+    char header[] = {47, 49, 46, 38, 39, 61};
+    write(fd, header, sizeof(header));
+
+    // LGC
+    int32_t h = 4;
+    int32_t w = 4;
+
+    GIFLogicalScreenDescriptor LGC = (GIFLogicalScreenDescriptor) {
+        ._size = 7,
+        .height = 4,
+        .width = 4,
+        .packed = 0x0101,
+    };
+
+    void * buf = calloc(1, LGC._size);
+
+    memcpy(buf, &LGC.height, sizeof(LGC.height));
+    memcpy(buf + sizeof(LGC.height), &LGC.width, sizeof(LGC.width));
+    memcpy(buf + sizeof(LGC.height) + sizeof(LGC.width), &LGC.packed, sizeof(LGC.packed));
+    uint8_t _k = 0x00;
+    memcpy(buf + sizeof(LGC.height) + sizeof(LGC.width) + sizeof(LGC.packed), &_k, 1);
+
+    write(fd, buf, LGC._size);
+    free(buf);
+
+    //GCT
+
+    uint32_t * colors = calloc(4, sizeof(*colors));
+    colors[0] = 0x00ffffff;
+    colors[1] = 0x00000000;
+    colors[2] = 0x0000ff00;
+    colors[3] = 0x00ff0000;
+
+
+    GIFColorTable GCT = (GIFColorTable){
+        ._size = 4 * sizeof(*colors),
+        .color = colors,
+    };
+
+    buf = calloc(1, GCT._size);
+    memcpy(buf, GCT.color, GCT._size);
+
+    write(fd, buf, GCT._size);
+
+    free(buf);
+    free(colors);
+
+    //GCE
+
+    GIFGraphicsConrtolExtension GCE = (GIFGraphicsConrtolExtension){
+        ._size = 8,
+        .extension_introducer = 0x21,
+        .graphic_conrtol_label = 0xf9,
+        .byte_size = 0x04,
+        .packed = 0x00,
+        .delay_time = 0x0000,
+        .transparent_color_index = 0x00,
+        .block_terminator = 0x00,
+    };
+
+    void * buf = calloc(1, GCE._size);
+    off_t off = 0;
+
+    memcpy(buf + off, &GCE.extension_introducer, sizeof(GCE.extension_introducer));
+    off += sizeof(GCE.extension_introducer);
+    memcpy(buf + off, &GCE.graphic_conrtol_label, sizeof(GCE.graphic_conrtol_label));
+    off += sizeof(GCE.graphic_conrtol_label);
+    memcpy(buf + off, &GCE.byte_size, sizeof(GCE.byte_size));
+    off += sizeof(GCE.byte_size);
+    memcpy(buf + off, &GCE.packed, sizeof(GCE.packed));
+    off += sizeof(GCE.packed);
+    memcpy(buf + off, &GCE.delay_time, sizeof(GCE.delay_time));
+    off += sizeof(GCE.delay_time);
+    memcpy(buf + off, &GCE.transparent_color_index, sizeof(GCE.transparent_color_index));
+    off += sizeof(GCE.transparent_color_index);
+    memcpy(buf + off, &GCE.block_terminator, sizeof(GCE.block_terminator));
+
+    write(fd, buf, GCE._size);
+    free(buf);
+
+    //Image Descriptor
+
+    GIFImageDescriptor ID = (GIFImageDescriptor){
+        ._size = 11,
+        .image_seperator = 0x2c, 
+        .image_left = 0x0000,
+        .image_top = 0x0000,
+        .image_width = 0x000a,
+        .image_height = 0x000a,
+        .packed = 0x00,
+    };
+
+    void * buf = calloc(1, ID._size);
+    off_t off = 0;
+
+    memcpy(buf + off, &ID.image_seperator, sizeof(ID.image_seperator));
+    off += sizeof(ID.image_seperator);
+    memcpy(buf + off, &ID.image_left, sizeof(ID.image_left));
+    off += sizeof(ID.image_left);
+    memcpy(buf + off, &ID.image_top, sizeof(ID.image_top));
+    off += sizeof(ID.image_top);
+    memcpy(buf + off, &ID.image_width, sizeof(ID.image_width));
+    off += sizeof(ID.image_width);
+    memcpy(buf + off, &ID.image_height, sizeof(ID.image_height));
+    off += sizof(ID.image_height);
+    memcpy(buf + off, &ID.packed, sizeof(ID.packed));
+
+    write(fd, buf, ID._size);
+    free(buf);
+
+    // image data
+
+    GIFImageData image_data = (GIFImageData) {
+
+    };
+    //lzw_encode();
+
     return 0;
 }
+
 
 typedef struct {
     int prefix;
@@ -112,22 +244,87 @@ int dictionary_find(Dictionary * dict, int prefix, int elem) {
     return -1;
 }
 
-int* lzw_encode(const int * base, unsigned n, const int *input, unsigned n_input, unsigned *n_output) {
-    unsigned cap_output = LZW_OUTPUT_SIZE;
-    *n_output = 0;
-    int* output = malloc(sizeof(int) * cap_output);
-    if (!output) {
-        return NULL;
-    }
+typedef struct {
+    LZWCode *data;
+    unsigned size;
+    unsigned capacity;
+} LZWOutput;
 
-    Dictionary dict;
-    dict.size = 0;
+enum {
+    LZW_OUTPUT_SIZE = 1<<16,
+};
+
+int lzw_emit(LZWOutput *output, int code, unsigned width) {
+    if(output -> size >= output->capacity) {
+        unsigned new_cap;
+        if(output->capacity) {
+            new_cap = output->capacity * 2;
+        } else {
+            new_cap = LZW_OUTPUT_SIZE;
+        }
+
+        LZWCode *tmp = realloc(
+            output->data,
+            new_cap * sizeof(*tmp)
+        );
+
+        if (!tmp) {
+            return -1;
+        }
+
+        output->data = tmp;
+        output->capacity = new_cap;
+    }
+    
+    output->data[output->size].code = code;
+    output->data[output->size].width = width;
+    output->size++;
+
+    return 0;
+}
+
+LZWCode* lzw_encode(const int * base, unsigned n, const int *input, unsigned n_input, unsigned *n_output) {
+    *n_output = 0;
+
+    LZWOutput output = {0};
+    Dictionary dict = {0};
 
     for(unsigned i = 0; i < n; i++) {
         dictionary_add(&dict, -1, base[i]);
     }
 
+    unsigned clear_code = n;
+    unsigned end_code = n + 1;
+
+    dictionary_add(&dict, -2, -2);
+    dictionary_add(&dict, -2, -3);
+
+    unsigned width = 1;
+    while((1u << width) <= end_code) {
+        width++;
+    }
+
+    unsigned init_width = width;
+
+    if(lzw_emit(&output, clear_code, width)) {
+        return NULL;
+    }
+
+    if (n_input == 0) {
+        if (lzw_emit(&output, end_code, width) != 0) {
+            free(output.data);
+            return NULL;
+        }
+
+        *n_output = output.size;
+        return output.data;
+    }
+
     int prefix = dictionary_find(&dict, -1, input[0]);
+    if (prefix < 0) {
+         free(output.data);
+            return NULL;
+    }
 
     for(unsigned i = 1; i< n_input; i++) {
         int ch = input[i];
@@ -137,37 +334,55 @@ int* lzw_encode(const int * base, unsigned n, const int *input, unsigned n_input
         if (find != -1) {
             prefix = find;
             continue;
-        } else {
-            if (*n_output >= cap_output) {
-                cap_output *= 2;
-                int* tmp = realloc(output, sizeof(int) * cap_output);
-                if (!tmp) {
-                    free(output);
-                    return NULL;
-                }
-                output = tmp;
-            }
-            output[*n_output] = prefix;
-            (*n_output)++;
+        } 
 
-            dictionary_add(&dict, prefix, ch);
-            prefix = dictionary_find(&dict, -1, ch);
+        if(lzw_emit(&output, prefix, width) != 0) {
+            free(output.data);
+            return NULL;
         }
-    }
+        
+        if(dict.size < MAX_DICT_SIZE) {
+            dictionary_add(&dict, prefix, ch);
 
-    if (prefix != -1) {
-        if (*n_output >= cap_output) {
-            cap_output *= 2;
-            int* tmp = realloc(output, sizeof(int) * cap_output);
-            if (!tmp) {
-                free(output);
+            if(dict.size > (1u << width) && width < 12) {
+                width++;
+            }
+        } else {
+            if (lzw_emit(&output, clear_code, width)) {
+                free(output.data);
                 return NULL;
             }
-            output = tmp;
+
+            dict.size = 0;
+
+            for(unsigned j = 0; j < n; j++) {
+                dictionary_add(&dict, -1, base[j]);
+            }
+
+            dictionary_add(&dict, -2, -2);
+            dictionary_add(&dict, -2, -3);
+
+            width = init_width;
         }
-        output[*n_output] = prefix;
-        (*n_output)++;
+
+        prefix = dictionary_find(&dict, -1, ch);
+
+        if (prefix < 0) {
+            free(output.data);
+            return NULL;
+        }
     }
 
-    return output;
+    if(lzw_emit(&output, prefix, width)) {
+        free(output.data);
+        return NULL;
+    }
+
+    if(lzw_emit(&output, end_code, width)) {
+        free(output.data);
+        return NULL;
+    }
+
+    *n_output = output.size;
+    return output.data;
 }
